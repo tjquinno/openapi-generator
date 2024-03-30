@@ -1,6 +1,6 @@
 /*
- * Copyright 2022 OpenAPI-Generator Contributors (https://openapi-generator.tech)
- * Copyright (c) 2022 Oracle and/or its affiliates
+ * Copyright 2022, 2024 OpenAPI-Generator Contributors (https://openapi-generator.tech)
+ * Copyright (c) 2022, 2024 Oracle and/or its affiliates
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,13 +17,30 @@
 
 package org.openapitools.codegen.languages;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URL;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.time.Duration;
+import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.prefs.BackingStoreException;
+import java.util.prefs.Preferences;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import io.swagger.v3.oas.models.Operation;
@@ -52,11 +69,10 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
     static final String HELIDON_MP = "mp";
     static final String HELIDON_SE = "se";
 
-    static final String HELIDON_NIMA = "nima";
-    static final String HELIDON_NIMA_ANNOTATIONS = "nima-annotations";
-
     static final String MICROPROFILE_ROOT_PACKAGE = "rootJavaEEPackage";
     static final String MICROPROFILE_ROOT_DEP_PREFIX = "x-helidon-rootJavaEEDepPrefix";
+    static final String X_USE_MP_TESTING = "x-helidon-useMpTesting";
+    static final String X_USE_SMALLRYE_JANDEX_PLUGIN = "x-helidon-useSmallRyeJandexPlugin";
     static final String X_HAS_RETURN_TYPE = "x-helidon-hasReturnType";
     static final String X_RETURN_TYPE_EXAMPLE_VALUE = "x-helidon-exampleReturnTypeValue";
     static final String MICROPROFILE_ROOT_PACKAGE_DESC = "Root package name for Java EE";
@@ -66,7 +82,6 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
     private static final String VALIDATION_ARTIFACT_PREFIX_JAVAX = "";
     private static final String VALIDATION_ARTIFACT_PREFIX_JAKARTA = MICROPROFILE_ROOT_PACKAGE_JAKARTA + ".";
     private static final Map<String, String> EXAMPLE_RETURN_VALUES = new HashMap<String, String>();
-
     // for generated doc
     static final String MICROPROFILE_ROOT_PACKAGE_DEFAULT =
         "Helidon 2.x and earlier: " + MICROPROFILE_ROOT_PACKAGE_JAVAX
@@ -76,7 +91,6 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
     static final String SERIALIZATION_LIBRARY_JSONB = "jsonb";
 
     public static final String HELIDON_VERSION = "helidonVersion";
-    public static final String DEFAULT_HELIDON_VERSION = "3.0.1";
     static final String HELIDON_VERSION_DESC = "Helidon version for generated code";
 
     static final String FULL_PROJECT = "fullProject";
@@ -86,8 +100,22 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
             "are never overwritten.";
 
     private String helidonVersion;
+    private int helidonMajorVersion;
+
     private String rootJavaEEPackage;
     private String rootJavaEEDepPrefix;
+    private String mpTestsGroup;
+    private String mpTestsArtifact;
+    private String jandexGroup;
+    private String jandexArtifact;
+
+    public static String defaultHelidonVersion() {
+        return VersionUtil.instance().defaultVersion();
+    }
+
+    public static String chooseVersion(String requestedVersionPrefix) {
+        return VersionUtil.instance().chooseVersion(requestedVersionPrefix);
+    }
 
     public JavaHelidonCommonCodegen() {
         super();
@@ -97,7 +125,7 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
         EXAMPLE_RETURN_VALUES.put("map", "Map");
 
         cliOptions.add(new CliOption(HELIDON_VERSION, HELIDON_VERSION_DESC)
-                .defaultValue(DEFAULT_HELIDON_VERSION));
+                .defaultValue(VersionUtil.instance().defaultVersion()));
         cliOptions.add(new CliOption(MICROPROFILE_ROOT_PACKAGE, MICROPROFILE_ROOT_PACKAGE_DESC)
                 .defaultValue(MICROPROFILE_ROOT_PACKAGE_DEFAULT));
         cliOptions.add(new CliOption(FULL_PROJECT, FULL_PROJECT_DESC)
@@ -128,14 +156,18 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
                                 HELIDON_VERSION));
             }
             setHelidonVersion(userHelidonVersion);
+
         } else if (!userParentVersion.isEmpty()) {
             setHelidonVersion(userParentVersion);
         } else {
-            setHelidonVersion(DEFAULT_HELIDON_VERSION);
+            setHelidonVersion(VersionUtil.instance().defaultVersion());
         }
 
         additionalProperties.put(HELIDON_VERSION, helidonVersion);
+
         setEEPackageAndDependencies(helidonVersion);
+        setMpTestDependency(helidonVersion);
+        setJandexPluginDependency(helidonVersion);
     }
 
     @Override
@@ -199,8 +231,9 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
     }
 
     private void setHelidonVersion(String version) {
-        helidonVersion = version;
-        setParentVersion(version);
+        helidonVersion = VersionUtil.instance().chooseVersion(version);
+        setParentVersion(helidonVersion);
+        helidonMajorVersion = VersionUtil.majorVersion(helidonVersion);
     }
 
     private void setEEPackageAndDependencies(String version) {
@@ -215,6 +248,19 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
             rootJavaEEDepPrefix.equals(MICROPROFILE_ROOT_PACKAGE_JAVAX)
                 ? VALIDATION_ARTIFACT_PREFIX_JAVAX
                 : VALIDATION_ARTIFACT_PREFIX_JAKARTA);
+    }
+
+
+    private void setMpTestDependency(String version) {
+        // The Helidon MP test dependency changed from io.helidon.microprofile.tests:helidon-microprofile-tests-junit5 in 3.x
+        // to io.helidon.microprofile.testing:helidon-microprofile-testing-junit5  in 4.x.
+        additionalProperties.put(X_USE_MP_TESTING, helidonMajorVersion >= 4);
+    }
+
+    private void setJandexPluginDependency(String version) {
+        // The Jandex plug-in GAV changed from org.jboss.jandex:jandex-maven-plugin in 3.x to
+        // io.smallrye:jandex-maven-plugin in 4.x.
+        additionalProperties.put(X_USE_SMALLRYE_JANDEX_PLUGIN, helidonMajorVersion >= 4);
     }
 
     private String checkAndSelectRootEEPackage(String version) {
@@ -319,6 +365,159 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
 
         default:
             return "null";
+        }
+    }
+
+    /**
+     * Logic for determining the Helidon versions available for user selection, either from helidon.io
+     * or from local preferences or from hard-coded values as a last-chance fallback.
+     */
+    static class VersionUtil {
+
+        private static final String PREFERENCES_KEY = "/io/helidon/openapigenerators";
+        private static final String VERSIONS_KEY = "versions";
+        private static final String HELIDON_VERSIONS_URL = "https://helidon.io/cli-data/versions.xml";
+        private static final Duration CONNECTION_TIMEOUT = Duration.ofSeconds(10);
+        private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(5);
+
+        private static final System.Logger LOGGER = System.getLogger(VersionUtil.class.getName());
+
+        private static final String DEFAULT_VERSIONS = "<data>\n" +
+                                                       "  <archetypes>\n" +
+                                                       "    <version>2.6.5</version>\n" +
+                                                       "    <version>3.2.6</version>\n" +
+                                                       "    <version>4.0.5</version>\n" +
+                                                       "  </archetypes>\n" +
+                                                       "</data>";
+
+        private static VersionUtil INSTANCE = null;
+        private static ReentrantLock lock = new ReentrantLock();
+
+        static VersionUtil instance() {
+            lock.lock();
+            try {
+                if (INSTANCE == null) {
+                    INSTANCE = new VersionUtil();
+                }
+            } catch (IOException | BackingStoreException ex) {
+                throw new RuntimeException(ex);
+            } finally {
+                lock.unlock();
+            }
+            return INSTANCE;
+        }
+
+        private final List<String> versions;
+
+        private VersionUtil() throws BackingStoreException, IOException {
+            versions = versions();
+        }
+
+        String defaultVersion() {
+            return versions.get(0);
+        }
+
+        static int majorVersion(String fullVersion) {
+            return Integer.parseUnsignedInt(fullVersion.substring(0, fullVersion.indexOf('.')));
+        }
+
+        /**
+         * Returns the version that is the "closest" match to the requested version prefix.
+         *
+         * @param requestedVersionPrefix prefix to use in matching versions
+         * @return matching version
+         */
+        String chooseVersion(String requestedVersionPrefix) {
+            String result = null;
+            while (result == null && !requestedVersionPrefix.isBlank()) {
+                result = matchVersion(requestedVersionPrefix, versions);
+                // Trim requested version from the back by "dots" to try to find an expression that matches.
+                int lastDot = requestedVersionPrefix.lastIndexOf('.');
+
+                requestedVersionPrefix = lastDot == -1 ? "" : requestedVersionPrefix.substring(0, lastDot);
+            }
+            return result;
+        }
+
+        /**
+         * Returns the last version that matches the provided prefix.
+         *
+         * @param versionPrefix prefix to use in matching against actual versions
+         * @param descendingOrderVersions supported versions in descending order
+         * @return specific version matching the prefix; null if none
+         */
+        private static String matchVersion(String versionPrefix, List<String> descendingOrderVersions) {
+            for (String candidate : descendingOrderVersions) {
+                if (candidate.startsWith(versionPrefix)) {
+                    return candidate;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * Retrieves the list of supported versions from the web site or, failing that, a local file.
+         *
+         * @return list of supported versions
+         * @throws IOException in case of error accessing the web site and reading the local file
+         */
+        private static List<String> versions() throws IOException, BackingStoreException {
+
+            HttpClient httpClient = HttpClient.newBuilder()
+                    .connectTimeout(CONNECTION_TIMEOUT)
+                    .build();
+            try {
+
+                HttpRequest req = HttpRequest.newBuilder(URI.create(HELIDON_VERSIONS_URL))
+                        .GET()
+                        .timeout(REQUEST_TIMEOUT)
+                        .build();
+
+                HttpResponse<String> response = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
+
+                Preferences versionPrefs = Preferences.userRoot().node(PREFERENCES_KEY);
+                String versions;
+                if (response.statusCode() == 200) {
+                    versions = response.body();
+                    // Save just-retrieved versions for later off-line use.
+                    versionPrefs.put(VERSIONS_KEY, versions);
+                    versionPrefs.flush();
+                    LOGGER.log(System.Logger.Level.DEBUG, "Saved retrieved versions in preferences");
+                } else {
+                    LOGGER.log(System.Logger.Level.DEBUG,
+                               "Unable to retrieve versions remotely; using local preferences or hard-wired defaults");
+                    // Try to get versions from preferences.
+                    versions = versionPrefs.get(VERSIONS_KEY, DEFAULT_VERSIONS);
+                }
+
+                return extractVersions(versions);
+
+            } catch (IOException | InterruptedException e) {
+                // Fallback to use the local versions.xml contents.
+                return localDefaultVersions();
+            }
+        }
+
+        private static List<String> localDefaultVersions() throws IOException {
+            URL versionsURL = VersionUtil.class.getResource("versions.xml");
+            if (versionsURL == null) {
+                return extractVersions(DEFAULT_VERSIONS);
+            }
+
+            File versionsFile = new File(versionsURL.getFile());
+            return Files.readAllLines(versionsFile.toPath());
+        }
+
+        private static List<String> extractVersions(String xmlContent) {
+            Pattern versionPattern = Pattern.compile("<version[^>]*>([^>]+)</version>");
+
+            Matcher matcher = versionPattern.matcher(xmlContent);
+            List<String> result = new ArrayList<>();
+            while (matcher.find()) {
+                result.add(matcher.group(1));
+            }
+            result.sort(Comparator.reverseOrder());
+            return result;
         }
     }
 }
