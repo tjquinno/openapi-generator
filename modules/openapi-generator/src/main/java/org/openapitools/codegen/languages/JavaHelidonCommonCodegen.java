@@ -91,7 +91,8 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
     static final String SERIALIZATION_LIBRARY_JSONB = "jsonb";
 
     public static final String HELIDON_VERSION = "helidonVersion";
-    static final String HELIDON_VERSION_DESC = "Helidon version for generated code";
+    static final String HELIDON_VERSION_DESC = "Helidon version prefix or full version. "
+        + "Latest Helidon release that matches the prefix is selected for use in the generated code";
 
     static final String FULL_PROJECT = "fullProject";
     static final String FULL_PROJECT_DESC = "If set to true, it will generate all files; if set to false, " +
