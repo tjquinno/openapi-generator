@@ -109,23 +109,6 @@ public class JavaHelidonCommonCodegenTest {
     }
 
     private void runServerVersionTest(String helidonVersion, String parentVersion) {
-//        Map<String, Object> additionalProperties = new HashMap<>();
-//        String expected = JavaHelidonCommonCodegen.defaultHelidonVersion();
-//        if (parentVersion != null) {
-//            additionalProperties.put(CodegenConstants.PARENT_VERSION, parentVersion);
-//            expected = JavaHelidonCommonCodegen.chooseVersion(parentVersion);
-//        }
-//        if (helidonVersion != null) {
-//            additionalProperties.put("helidonVersion", helidonVersion);
-//            expected = JavaHelidonCommonCodegen.chooseVersion(helidonVersion);
-//        }
-//        mpServerGenerator.opts(mpServerConfigurator.setAdditionalProperties(additionalProperties)
-//                .toClientOptInput());
-//        List<File> files = mpServerGenerator.generate();
-//
-//        TestUtils.ensureContainsFile(files, Paths.get(mpServerOutputDir).toFile(), "pom.xml");
-//        TestUtils.assertFileContains(Paths.get(mpServerOutputDir + "/pom.xml"),
-//                String.format(Locale.ROOT, "<version>%s</version>", expected));
         runVersionTest(helidonVersion, parentVersion, mpServerGenerator, mpServerConfigurator, mpServerOutputDir);
     }
 
