@@ -126,7 +126,7 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
         EXAMPLE_RETURN_VALUES.put("map", "Map");
 
         cliOptions.add(new CliOption(HELIDON_VERSION, HELIDON_VERSION_DESC)
-                .defaultValue(VersionUtil.instance().defaultVersion()));
+                .defaultValue("highest released version matching helidonVersion prefix"));
         cliOptions.add(new CliOption(MICROPROFILE_ROOT_PACKAGE, MICROPROFILE_ROOT_PACKAGE_DESC)
                 .defaultValue(MICROPROFILE_ROOT_PACKAGE_DEFAULT));
         cliOptions.add(new CliOption(FULL_PROJECT, FULL_PROJECT_DESC)

@@ -1,9 +1,10 @@
 generatorName: java-helidon-server
 library: mp
-outputDir: samples/server/petstore/java-helidon-server/mp
+outputDir: samples/server/petstore/java-helidon-server/v3/mp
 inputSpec: modules/openapi-generator/src/test/resources/3_0/petstore-with-fake-endpoints-models-for-testing.yaml
 templateDir: modules/openapi-generator/src/main/resources/java-helidon/server
 additionalProperties:
+  helidonVersion: 3
   artifactId: petstore-helidon-server-mp
   hideGenerationTimestamp: "true"
   build: "all"
