@@ -18,7 +18,7 @@ on:
       - samples/server/petstore/java-helidon-server/v4/se/**
 jobs:
   build:
-    name: Build with JDK17
+    name: Build with JDK21
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
