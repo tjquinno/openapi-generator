@@ -92,7 +92,7 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
 
     public static final String HELIDON_VERSION = "helidonVersion";
     static final String HELIDON_VERSION_DESC = "Helidon version prefix or full version. "
-        + "Latest Helidon release that matches the prefix is selected for use in the generated code";
+        + "Latest Helidon release that matches the prefix is selected for use in the generated code.";
 
     static final String FULL_PROJECT = "fullProject";
     static final String FULL_PROJECT_DESC = "If set to true, it will generate all files; if set to false, " +
@@ -126,7 +126,7 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
         EXAMPLE_RETURN_VALUES.put("map", "Map");
 
         cliOptions.add(new CliOption(HELIDON_VERSION, HELIDON_VERSION_DESC)
-                .defaultValue("highest released version matching helidonVersion prefix"));
+                .defaultValue("Highest released version."));
         cliOptions.add(new CliOption(MICROPROFILE_ROOT_PACKAGE, MICROPROFILE_ROOT_PACKAGE_DESC)
                 .defaultValue(MICROPROFILE_ROOT_PACKAGE_DEFAULT));
         cliOptions.add(new CliOption(FULL_PROJECT, FULL_PROJECT_DESC)
