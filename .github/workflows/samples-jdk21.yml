@@ -3,3 +3,9 @@ on:
   push:
     paths:
       - samples/client/petstore/java-helidon-client/v4/mp/**
+jobs:
+  build:
+    name: Placeholder Build with JDK21
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
