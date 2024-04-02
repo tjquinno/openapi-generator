@@ -1,1 +1,5 @@
-
+name: Samples JDK21
+on:
+  push:
+    paths:
+      - samples/client/petstore/java-helidon-client/v4/mp/**
