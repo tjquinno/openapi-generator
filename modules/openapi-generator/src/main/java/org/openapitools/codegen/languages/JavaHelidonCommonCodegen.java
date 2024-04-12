@@ -27,10 +27,8 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -45,6 +43,11 @@ import java.util.stream.Collectors;
 
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.servers.Server;
+import org.eclipse.aether.util.version.GenericVersionScheme;
+import org.eclipse.aether.version.InvalidVersionSpecificationException;
+import org.eclipse.aether.version.Version;
+import org.eclipse.aether.version.VersionConstraint;
+import org.eclipse.aether.version.VersionScheme;
 import org.openapitools.codegen.CliOption;
 import org.openapitools.codegen.CodegenConstants;
 import org.openapitools.codegen.CodegenOperation;
@@ -90,9 +93,11 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
     static final String SERIALIZATION_LIBRARY_JACKSON = "jackson";
     static final String SERIALIZATION_LIBRARY_JSONB = "jsonb";
 
+    public static final String DEFAULT_HELIDON_VERSION = "3.0.1";
     public static final String HELIDON_VERSION = "helidonVersion";
-    static final String HELIDON_VERSION_DESC = "Helidon version prefix or full version. "
-        + "Latest Helidon release that matches the prefix is selected for use in the generated code.";
+    static final String HELIDON_VERSION_DESC = "Helidon complete version identifier or major version number. "
+        + "The specified exact Helidon release or, if specified as a major version the latest release of that major version, "
+        + " is used in the generated code.";
 
     static final String FULL_PROJECT = "fullProject";
     static final String FULL_PROJECT_DESC = "If set to true, it will generate all files; if set to false, " +
@@ -415,7 +420,7 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
         }
 
         String defaultVersion() {
-            return versions.get(0);
+            return DEFAULT_HELIDON_VERSION;
         }
 
         static int majorVersion(String fullVersion) {
@@ -423,41 +428,91 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
         }
 
         /**
-         * Returns the version that is the "closest" match to the requested version prefix.
+         * Returns the version that is the "closest" match to the requested version expression from among the known releases,
+         * where the expression is one of the following:
+         * <ul>
+         *     <li>a single major version number (e.g., {@code 4})</li>
+         *     <li>the full exact version to use</li>
+         *     <li>a Maven version range</li>
+         * </ul>
          *
-         * @param requestedVersionPrefix prefix to use in matching versions
+         * @param requestedVersion version to search for
          * @return matching version
          */
-        String chooseVersion(String requestedVersionPrefix) {
-            String result = null;
-            while (result == null && !requestedVersionPrefix.isBlank()) {
-                result = matchVersion(requestedVersionPrefix, versions);
-                // Trim requested version from the back by "dots" to try to find an expression that matches.
-                int lastDot = requestedVersionPrefix.lastIndexOf('.');
-
-                requestedVersionPrefix = lastDot == -1 ? "" : requestedVersionPrefix.substring(0, lastDot);
-            }
-            return result;
+        String chooseVersion(String requestedVersion) {
+            return chooseVersion(requestedVersion, versions);
         }
 
         /**
-         * Returns the last version that matches the provided prefix.
+         * Returns the version that is the "closest" match to the requested version expression from among the provided
+         * releases, where the expression expression is one of the following:
+         * <ul>
+         *     <li>a single major version number (e.g., {@code 4})</li>
+         *     <li>the full exact version to use</li>
+         *     <li>a Maven version range</li>
+         * </ul>
          *
-         * @param versionPrefix prefix to use in matching against actual versions
-         * @param descendingOrderVersions supported versions in descending order
-         * @return specific version matching the prefix; null if none
+         * @param requestedVersion version to search for
+         * @param candidateVersions releases to consider
+         * @return matching version
          */
-        private static String matchVersion(String versionPrefix, List<String> descendingOrderVersions) {
-            for (String candidate : descendingOrderVersions) {
-                if (candidate.startsWith(versionPrefix)) {
-                    return candidate;
+        String chooseVersion(String requestedVersion, List<String> candidateVersions)  {
+
+            VersionScheme versionScheme = new GenericVersionScheme();
+
+            // If the requested version is a single number then treat it as "highest dot release of this major version".
+            // Otherwise, just create a constraint from the value. That also handles the case where the requested version is
+            // the complete version.
+
+            VersionConstraint requestedConstraint = constraint(versionScheme, requestedVersion);
+            Version bestMatch = null;
+            for (String candidate : candidateVersions) {
+                Version candidateVersion;
+
+                try {
+                    candidateVersion = versionScheme.parseVersion(candidate);
+                } catch (InvalidVersionSpecificationException ex) {
+                   LOGGER.log(System.Logger.Level.WARNING, "Error parsing candidate version '" + candidate + "'", ex);
+                   continue;
+                }
+                if (requestedConstraint.containsVersion(candidateVersion)) {
+                    if (bestMatch == null || bestMatch.compareTo(candidateVersion) <= 0) {
+                        bestMatch = candidateVersion;
+                    }
                 }
             }
-            return null;
+            return bestMatch != null ? bestMatch.toString() : null;
+        }
+
+        private VersionConstraint constraint(VersionScheme versionScheme, String requestedVersion) {
+            try {
+                int asSingleNumber = Integer.parseUnsignedInt(requestedVersion);
+                try {
+                    return versionScheme.parseVersionConstraint(String.format(Locale.getDefault(),
+                                                                              "[%s,%d-alpha)",
+                                                                              requestedVersion,
+                                                                              asSingleNumber + 1));
+                } catch (InvalidVersionSpecificationException ex) {
+                    throw new RuntimeException("Error preparing constraint for version expression '"
+                                                       + requestedVersion
+                                                       + "' treated as major version " + asSingleNumber,
+                                               ex);
+                }
+            } catch (NumberFormatException nfe) {
+                try {
+                    return versionScheme.parseVersionConstraint(requestedVersion);
+                } catch (InvalidVersionSpecificationException ex) {
+                    throw new RuntimeException("Error parsing version expression '"
+                                                       + requestedVersion
+                                                       + "' as a version constraint",
+                                               ex);
+                }
+            }
         }
 
         /**
-         * Retrieves the list of supported versions from the web site or, failing that, a local file.
+         * Retrieves the list of supported versions from the web site or, failing that, local preferences or, failing that,
+         * hard-coded versions.
          *
          * @return list of supported versions
          * @throws IOException in case of error accessing the web site and reading the local file
@@ -485,7 +540,7 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
                     versionPrefs.flush();
                     LOGGER.log(System.Logger.Level.DEBUG, "Saved retrieved versions in preferences");
                 } else {
-                    LOGGER.log(System.Logger.Level.DEBUG,
+                    LOGGER.log(System.Logger.Level.INFO,
                                "Unable to retrieve versions remotely; using local preferences or hard-wired defaults");
                     // Try to get versions from preferences.
                     versions = versionPrefs.get(VERSIONS_KEY, DEFAULT_VERSIONS);
@@ -517,7 +572,6 @@ public abstract class JavaHelidonCommonCodegen extends AbstractJavaCodegen
             while (matcher.find()) {
                 result.add(matcher.group(1));
             }
-            result.sort(Comparator.reverseOrder());
             return result;
         }
     }
