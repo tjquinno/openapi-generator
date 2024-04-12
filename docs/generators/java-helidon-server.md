@@ -39,7 +39,7 @@ These options may be applied as additional-properties (cli) or configOptions (pl
 |fullProject|If set to true, it will generate all files; if set to false, it will only generate API files. If unspecified, the behavior depends on whether a project exists or not: if it does not, same as true; if it does, same as false. Note that test files are never overwritten.| ||
 |gradleProject|Whether to generate gradle project instead of maven.| |false|
 |groupId|groupId in generated pom.xml| |org.openapitools|
-|helidonVersion|Helidon version prefix or full version. Latest Helidon release that matches the prefix is selected for use in the generated code.| |Highest released version.|
+|helidonVersion|Helidon complete version identifier or major version number. The specified exact Helidon release or, if specified as a major version the latest release of that major version,  is used in the generated code.| |Highest released version.|
 |hideGenerationTimestamp|Hides the generation timestamp when files are generated.| |false|
 |ignoreAnyOfInEnum|Ignore anyOf keyword in enum| |false|
 |implicitHeaders|Skip header parameters in the generated API methods using @ApiImplicitParams annotation.| |false|
