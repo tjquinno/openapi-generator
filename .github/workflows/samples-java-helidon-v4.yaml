@@ -18,9 +18,7 @@ jobs:
       matrix:
         sample:
           - samples/client/petstore/java-helidon-client/v4/mp
-#          - samples/client/petstore/java-helidon-client/se
           - samples/server/petstore/java-helidon-server/v4/mp
-#          - samples/server/petstore/java-helidon-server/se
         version: [21]
     steps:
       - uses: actions/checkout@v4
