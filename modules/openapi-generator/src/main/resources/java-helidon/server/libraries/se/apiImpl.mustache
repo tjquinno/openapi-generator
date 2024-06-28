@@ -31,60 +31,14 @@ public class {{classname}}Impl {{^useAbstractClass}}implements{{/useAbstractClas
 {{/useAbstractClass}}
 {{#operation}}
 
+{{#x-helidon-v3}}
 {{#useAbstractClass}}
     public void handle{{#lambda.titlecase}}{{{operationId}}}{{/lambda.titlecase}}(ServerRequest request, ServerResponse response{{#allParams}}, {{>dataType}} {{paramName}}{{/allParams}}) {
 {{/useAbstractClass}}
+{{/x-helidon-v3}}
 {{^useAbstractClass}}
 {{#x-helidon-v3}}
     public void {{{operationId}}}(ServerRequest request, ServerResponse response{{#allParams}}{{#isBodyParam}}{{#isModel}}, {{{dataType}}} {{paramName}}{{/isModel}}{{/isBodyParam}}{{/allParams}}) {
-{{/x-helidon-v3}}
-{{^x-helidon-v3}}
-    public void {{{operationId}}}(ServerRequest request, ServerResponse response) {
-{{!
-
-  If the operation has form parameters we need to generate code to process the request body as form data, creating a Helidon
-  Parameters object we can use to assign the individual form variables. That is, unless the body is multipart in which case
-  we handle things differently.
-
-}}{{^isMultipart}}{{#formParams}}{{#-first}}        Parameters formParams = request.content().as(Parameters.class);
-
-{{/-first}}{{/formParams}}{{/isMultipart}}{{!
-}}{{#isMultipart}}        MultiPart multiPart = request.content().as(MultiPart.class);
-        multiPart.forEachRemaining(part -> {
-                // TODO: Insert user-implemented handling of multipart data here.
-        });
-{{/isMultipart}}{{!
-}}        ValidatorUtils.Validator validator = ValidatorUtils.validator(LOGGER);
-{{#allParams}}{{!
-}}{{#isMap}}
-        // TODO - user code needed to handle Map for {{#isHeaderParam}}header{{/isHeaderParam}}{{#isQueryParam}}query{{/isQueryParam}}{{#isFormParam}}form{{/isFormParam}}{{#isBodyParam}}body{{/isBodyParam}}{{#isCookieParam}}cookie{{/isCookieParam}} parameter {{paramName}}.{{/isMap}}{{!
-}}{{^isMap}}{{!
-}}{{!
-
-    We handle form parameters separately here because we handle multipart separate from single part form params.
-
-}}{{^isFormParam}}{{!
-}}{{^isBodyParam}}
-        {{>paramDecl}} = {{>paramValue}};{{!
-}}{{/isBodyParam}}{{!
-}}{{#isBodyParam}}{{!
-}}{{^isFile}}
-        {{>paramDecl}} = {{>bodyParamValue}};{{!
-}}{{/isFile}}{{!
-}}{{#isFile}}
-        InputStream {{paramName}} = request.content().inputStream;{{!
-}}{{/isFile}}
-{{/isBodyParam}}{{!
-}}{{/isFormParam}}{{!
-}}{{#isFormParam}}{{^isMultipart}}
-        {{>paramDecl}} = {{>paramValue}};{{!
-}}{{/isMultipart}}{{/isFormParam}}{{!
-}}{{/isMap}}{{!
-}}{{/allParams}}
-        validator.execute();
-
-        handle{{#lambda.titlecase}}{{operationId}}{{/lambda.titlecase}}(request, response{{#allParams}},
-                    {{paramName}}{{/allParams}});
 {{/x-helidon-v3}}
 {{/useAbstractClass}}
         response.status(HTTP_CODE_NOT_IMPLEMENTED).send();
